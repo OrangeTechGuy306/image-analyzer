@@ -3,104 +3,129 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Image Analysis with AI</title>
+    <title>AI Vision Analyst</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Removed TensorFlow.js and MobileNet imports as all analysis now runs on Gemini API -->
     
     <!-- Use Inter font family -->
     <style>
         body {
             font-family: 'Inter', sans-serif;
-            background-color: #f4f7f9;
+            background-color: #e5e7eb; /* Light gray background for chat feel */
         }
         /* Custom style to ensure the container houses the video/image correctly */
         .video-output-container {
             min-height: 20rem; /* h-80 equivalent for minimum height */
             background-color: #1f2937; /* bg-gray-900 */
         }
+        /* Style for the analysis response card */
+        .ai-response-card {
+            background-color: #f9fafb; /* Lighter background for the results */
+            border-left: 4px solid #3b82f6; /* Blue border accent */
+        }
     </style>
 </head>
-<body class="flex flex-col items-center justify-center min-h-screen p-4">
+<body class="flex flex-col items-center min-h-screen p-4 md:p-8">
 
-    <div class="w-full max-w-lg bg-white p-6 md:p-8 rounded-2xl shadow-2xl space-y-6">
-        <h1 class="text-3xl font-bold text-gray-800 text-center">Image Analysis (Gemini Powered)</h1>
+    <div class="w-full max-w-7xl mx-auto flex flex-col md:flex-row space-y-6 md:space-y-0 md:space-x-6">
 
-        <!-- Video/Output Display Area -->
-        <div class="relative rounded-xl overflow-hidden shadow-xl video-output-container flex items-center justify-center">
+        <!-- 1. Controls / Input Panel (Left on Desktop, Top on Mobile) -->
+        <div id="control-panel" class="md:w-1/3 w-full bg-white p-6 rounded-2xl shadow-2xl h-fit sticky top-8">
+            <h1 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Vision Controls</h1>
             
-            <!-- Live Video Feed -->
-            <video id="video-feed" autoplay playsinline class="hidden w-full h-full object-cover"></video>
-            
-            <!-- Hidden Canvas for capturing snapshots -->
-            <canvas id="snapshot-canvas" class="hidden"></canvas>
+            <div class="space-y-3">
+                
+                <!-- Camera Controls -->
+                <div class="flex space-x-3">
+                    <button id="start-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out shadow-md focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.778 3h2.444a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Start Camera
+                    </button>
+                    <button id="snap-button" class="w-1/3 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 transition duration-150 ease-in-out shadow-md disabled:opacity-50" disabled>
+                        Snap
+                    </button>
+                </div>
 
-            <!-- Image Output Area (Used for captured or uploaded image) -->
-            <img id="image-output" class="hidden w-full h-full object-contain p-4" alt="Captured or Uploaded Image">
+                <!-- File Upload Controls -->
+                <div class="flex space-x-3">
+                    <button id="file-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-gray-800 bg-gray-200 hover:bg-gray-300 transition duration-150 ease-in-out shadow-md focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Choose from Device
+                    </button>
+                    <!-- Hidden file input -->
+                    <input type="file" id="file-input" accept="image/*" class="hidden">
+                </div>
+                
+                <!-- Analyze Button -->
+                <button id="analyze-button" class="w-full py-3 px-4 text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition duration-150 ease-in-out shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50" disabled>
+                    <div id="analyze-spinner" class="hidden animate-spin h-5 w-5 mr-3 border-2 border-white border-t-transparent rounded-full inline-block"></div>
+                    <span id="analyze-text">Analyze Image</span>
+                </button>
 
-            <!-- Overlay Message -->
-            <div id="status-message" class="absolute inset-0 flex items-center justify-center p-4 text-center text-gray-400 font-medium">
-                Ready. Start camera or upload an image.
+                <!-- Stop Camera Button -->
+                <button id="stop-button" class="w-full py-2 px-4 text-sm font-medium rounded-lg text-gray-500 bg-transparent hover:bg-gray-100 transition duration-150 ease-in-out hidden">
+                    Stop Camera
+                </button>
+
+                <!-- Error/Status Box -->
+                <div id="alert-box" class="hidden p-3 bg-red-100 text-red-700 rounded-lg text-sm" role="alert">
+                    <!-- Error messages will appear here -->
+                </div>
             </div>
         </div>
 
-        <!-- Controls -->
-        <div class="space-y-3">
-            <div class="flex space-x-3">
-                <button id="start-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.778 3h2.444a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                    Start Camera
-                </button>
-                <button id="snap-button" class="w-1/3 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 transition duration-150 ease-in-out shadow-md hover:shadow-lg disabled:opacity-50" disabled>
-                    Snap
-                </button>
-            </div>
+        <!-- 2. Image Display and Results / Output Panel (Right on Desktop, Bottom on Mobile) -->
+        <div id="output-panel" class="md:w-2/3 w-full space-y-6">
             
-            <div class="flex space-x-3">
-                 <button id="file-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-gray-800 bg-gray-200 hover:bg-gray-300 transition duration-150 ease-in-out shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                    </svg>
-                    Choose from Device
-                </button>
-                <!-- Hidden file input -->
-                <input type="file" id="file-input" accept="image/*" class="hidden">
-            </div>
-            
-            <!-- Analyze Button and Loading Indicator -->
-            <button id="analyze-button" class="w-full py-3 px-4 text-lg font-semibold rounded-lg text-white bg-blue-600 hover:bg-blue-700 transition duration-150 ease-in-out shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-500 focus:ring-opacity-50 disabled:opacity-50" disabled>
-                <div id="analyze-spinner" class="hidden animate-spin h-5 w-5 mr-3 border-2 border-white border-t-transparent rounded-full inline-block"></div>
-                <span id="analyze-text">Analyze Image</span>
-            </button>
+            <!-- Image Area -->
+            <div class="bg-white p-4 rounded-2xl shadow-xl">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Image Preview</h2>
+                <div class="relative rounded-xl overflow-hidden shadow-inner video-output-container flex items-center justify-center">
+                    
+                    <!-- Live Video Feed -->
+                    <video id="video-feed" autoplay playsinline class="hidden w-full h-full object-cover"></video>
+                    
+                    <!-- Hidden Canvas for capturing snapshots -->
+                    <canvas id="snapshot-canvas" class="hidden"></canvas>
 
-            <button id="stop-button" class="w-full py-2 px-4 text-sm font-medium rounded-lg text-gray-500 bg-transparent hover:bg-gray-100 transition duration-150 ease-in-out hidden">
-                Stop Camera
-            </button>
-        </div>
+                    <!-- Image Output Area (Used for captured or uploaded image) -->
+                    <img id="image-output" class="hidden w-full h-full object-contain p-4" alt="Captured or Uploaded Image">
 
-        <!-- Classification Results and LLM Description Area -->
-        <div id="results-area" class="p-4 bg-gray-50 rounded-xl border border-gray-200">
-            
-            <h3 class="text-xl font-bold text-gray-700 mb-2">Analysis Results (Gemini)</h3>
-            
-            <div id="classification-output" class="text-gray-600 mb-4 p-3 bg-white rounded-lg border">
-                <p>— Primary Classification —</p>
-                <p class="italic text-sm mt-1">Classification will appear here after analysis.</p>
+                    <!-- Overlay Message -->
+                    <div id="status-message" class="absolute inset-0 flex items-center justify-center p-4 text-center text-gray-400 font-medium">
+                        Ready. Start camera or upload an image.
+                    </div>
+                </div>
             </div>
-            
-            <h3 class="text-xl font-bold text-gray-700 mb-2 mt-4">Detailed Description</h3>
-            <div id="description-output" class="text-gray-800 p-3 bg-white rounded-lg border">
-                <p>The detailed context and facts about the image will appear here.</p>
+
+            <!-- Analysis Results (The Chat Feed) -->
+            <div id="results-feed" class="bg-white p-6 rounded-2xl shadow-xl space-y-6">
+                <h2 class="text-xl font-semibold text-gray-800 border-b pb-2">AI Analysis Feed</h2>
+                
+                <div id="initial-message" class="p-4 rounded-xl text-gray-500 bg-gray-100">
+                    Snap an image or upload one, then press "Analyze Image" to receive classification and a detailed summary.
+                </div>
+
+                <!-- Analysis Response Card (Where Gemini results are injected) -->
+                <div id="analysis-response" class="hidden ai-response-card p-4 rounded-xl shadow-md">
+                    <!-- Results injected here -->
+                    <div id="classification-output" class="text-gray-600 mb-4">
+                        <p class="font-bold text-lg text-blue-600 mb-2">Classification:</p>
+                        <p class="italic text-sm">Waiting for results...</p>
+                    </div>
+                    
+                    <div id="description-output" class="text-gray-800 border-t pt-4">
+                        <p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p>
+                        <p class="text-base">Waiting for results...</p>
+                    </div>
+                </div>
+                
             </div>
-            
-        </div>
-        
-        <!-- Error/Status Box (Hidden by default) -->
-        <div id="alert-box" class="hidden p-4 bg-red-100 text-red-700 rounded-lg text-sm" role="alert">
-            <!-- Error messages will appear here -->
         </div>
     </div>
 
@@ -120,6 +145,8 @@
             const analyzeButton = document.getElementById('analyze-button');
             const analyzeSpinner = document.getElementById('analyze-spinner');
             const analyzeText = document.getElementById('analyze-text');
+            const initialMessage = document.getElementById('initial-message');
+            const analysisResponse = document.getElementById('analysis-response');
             const classificationOutput = document.getElementById('classification-output');
             const descriptionOutput = document.getElementById('description-output');
 
@@ -129,8 +156,8 @@
             // --- Constants for API/Retries ---
             const API_RETRIES = 3;
             const INITIAL_DELAY_MS = 1000;
-            const apiKey = ""; 
-            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=AIzaSyDs7EY5vJegmXJLdHoFzFXSGGWt8h54Yis`;
+            const apiKey = "AIzaSyDs7EY5vJegmXJLdHoFzFXSGGWt8h54Yis"; 
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
 
             // --- Utility Functions ---
 
@@ -197,8 +224,11 @@
                 }
 
                 setAnalysisState(true, 'Analyzing...');
-                classificationOutput.innerHTML = '<div class="flex items-center text-blue-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full"></div>Sending image for classification...</div>';
-                descriptionOutput.innerHTML = '<p class="text-gray-500">Waiting for detailed analysis from Gemini...</p>';
+                initialMessage.classList.add('hidden');
+                analysisResponse.classList.remove('hidden');
+                
+                classificationOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Classification:</p><div class="flex items-center text-blue-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full"></div>Sending image for classification...</div>`;
+                descriptionOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p><p class="text-gray-500">Waiting for detailed analysis from Gemini...</p>`;
 
                 const parsedImage = parseDataUrl(imageOutput.src);
                 if (!parsedImage) {
@@ -267,25 +297,29 @@
                         
                         // Update UI with structured results
                         classificationOutput.innerHTML = `
-                            <p>— Primary Classification —</p>
-                            <p class="font-bold text-blue-700 mt-2 text-xl">${analysis.classification || 'N/A'}</p>
+                            <p class="font-bold text-lg text-blue-600 mb-2">Classification:</p>
+                            <p class="font-semibold text-gray-800 text-xl">${analysis.classification || 'N/A'}</p>
                         `;
 
                         // Basic formatting for the description
                         const formattedDescription = (analysis.description || 'Description not available.')
                             .split('\n')
                             .filter(p => p.trim() !== '')
-                            .map(p => `<p>${p}</p>`)
+                            .map(p => `<p class="mb-2">${p}</p>`)
                             .join('');
 
-                        descriptionOutput.innerHTML = formattedDescription;
+                        descriptionOutput.innerHTML = `
+                            <p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p>
+                            <div class="text-base text-gray-700">${formattedDescription}</div>
+                        `;
+                        
                         setAnalysisState(false, 'Analyze Image');
                         return; // Success
                         
                     } catch (error) {
                         console.error(`Gemini API call failed (Attempt ${i + 1}):`, error);
                         if (i === API_RETRIES - 1) {
-                            descriptionOutput.innerHTML = '<p class="text-red-500">Failed to generate detailed description after multiple retries. Please check the console for network issues.</p>';
+                            descriptionOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p><p class="text-red-500">Failed to generate detailed description after multiple retries. Please check the console for network issues.</p>`;
                             setAnalysisState(false, 'Analyze Image');
                         } else {
                             // Exponential backoff delay
@@ -353,9 +387,10 @@
                 // Stop the camera stream after snapping
                 stopCamera();
                 
-                // Clear previous analysis results
-                classificationOutput.innerHTML = '<p>— Primary Classification —</p><p class="italic text-sm mt-1">Image snapped. Click Analyze Image below.</p>';
-                descriptionOutput.innerHTML = '<p class="text-gray-500">No detailed description yet.</p>';
+                // Reset analysis feedback
+                initialMessage.classList.remove('hidden');
+                analysisResponse.classList.add('hidden');
+
                 setAnalysisState(false, 'Analyze Image');
                 hideAlert();
 
@@ -371,6 +406,8 @@
                 try {
                     hideAlert();
                     imageOutput.classList.add('hidden'); // Hide any previous output image
+                    initialMessage.classList.remove('hidden');
+                    analysisResponse.classList.add('hidden');
                     setAnalysisState(true, 'Analyze Image'); // Disable analysis while streaming
                     
                     const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -398,7 +435,7 @@
                         await getMediaStreamWithRetry(attempt + 1);
                     } else {
                         statusMessage.classList.remove('hidden');
-                        statusMessage.textContent = 'Start camera or upload an image.';
+                        statusMessage.textContent = 'Ready. Start camera or upload an image.';
                         displayAlert(
                             `Cannot start camera after ${API_RETRIES} attempts. Error: ${err.name}. Check camera access permissions.`
                         );
@@ -461,9 +498,10 @@
                     statusMessage.classList.add('hidden');
                     hideAlert();
                     
-                    // Clear previous analysis results and enable analysis
-                    classificationOutput.innerHTML = '<p>— Primary Classification —</p><p class="italic text-sm mt-1">Image uploaded. Click Analyze Image below.</p>';
-                    descriptionOutput.innerHTML = '<p class="text-gray-500">No detailed description yet.</p>';
+                    // Reset analysis feedback
+                    initialMessage.classList.remove('hidden');
+                    analysisResponse.classList.add('hidden');
+
                     setAnalysisState(false, 'Analyze Image');
 
                     fileInput.value = '';
