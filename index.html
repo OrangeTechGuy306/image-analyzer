@@ -6,9 +6,7 @@
     <title>Image Analysis with AI</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load TensorFlow.js Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.2.0/dist/tf.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+    <!-- Removed TensorFlow.js and MobileNet imports as all analysis now runs on Gemini API -->
     
     <!-- Use Inter font family -->
     <style>
@@ -26,7 +24,7 @@
 <body class="flex flex-col items-center justify-center min-h-screen p-4">
 
     <div class="w-full max-w-lg bg-white p-6 md:p-8 rounded-2xl shadow-2xl space-y-6">
-        <h1 class="text-3xl font-bold text-gray-800 text-center">Image Analysis with AI</h1>
+        <h1 class="text-3xl font-bold text-gray-800 text-center">Image Analysis (Gemini Powered)</h1>
 
         <!-- Video/Output Display Area -->
         <div class="relative rounded-xl overflow-hidden shadow-xl video-output-container flex items-center justify-center">
@@ -38,12 +36,11 @@
             <canvas id="snapshot-canvas" class="hidden"></canvas>
 
             <!-- Image Output Area (Used for captured or uploaded image) -->
-            <!-- The image must have an explicit width/height for MobileNet to classify it reliably, although CSS helps a lot -->
             <img id="image-output" class="hidden w-full h-full object-contain p-4" alt="Captured or Uploaded Image">
 
             <!-- Overlay Message -->
             <div id="status-message" class="absolute inset-0 flex items-center justify-center p-4 text-center text-gray-400 font-medium">
-                Loading AI model...
+                Ready. Start camera or upload an image.
             </div>
         </div>
 
@@ -86,16 +83,17 @@
 
         <!-- Classification Results and LLM Description Area -->
         <div id="results-area" class="p-4 bg-gray-50 rounded-xl border border-gray-200">
-            <h3 class="text-xl font-bold text-gray-700 mb-2">Analysis Results</h3>
+            
+            <h3 class="text-xl font-bold text-gray-700 mb-2">Analysis Results (Gemini)</h3>
             
             <div id="classification-output" class="text-gray-600 mb-4 p-3 bg-white rounded-lg border">
-                <p>— Image Classification (MobileNet) —</p>
-                <p class="italic text-sm mt-1">Ready to analyze an image. Snap or upload one.</p>
+                <p>— Primary Classification —</p>
+                <p class="italic text-sm mt-1">Classification will appear here after analysis.</p>
             </div>
             
-            <h3 class="text-xl font-bold text-gray-700 mb-2 mt-4">Detailed Description (via Gemini)</h3>
+            <h3 class="text-xl font-bold text-gray-700 mb-2 mt-4">Detailed Description</h3>
             <div id="description-output" class="text-gray-800 p-3 bg-white rounded-lg border">
-                <p>The Gemini model will provide a detailed context here once an image is successfully analyzed.</p>
+                <p>The detailed context and facts about the image will appear here.</p>
             </div>
             
         </div>
@@ -107,11 +105,8 @@
     </div>
 
     <script>
-
         document.addEventListener('DOMContentLoaded', () => {
-
             // --- UI Elements ---
-
             const video = document.getElementById('video-feed');
             const canvas = document.getElementById('snapshot-canvas');
             const imageOutput = document.getElementById('image-output');
@@ -130,13 +125,11 @@
 
             // --- State Variables ---
             let videoStream = null;
-            let model = null;
-            let isModelLoading = false;
 
             // --- Constants for API/Retries ---
             const API_RETRIES = 3;
             const INITIAL_DELAY_MS = 1000;
-            const apiKey = "";
+            const apiKey = ""; 
             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=AIzaSyDs7EY5vJegmXJLdHoFzFXSGGWt8h54Yis`;
 
             // --- Utility Functions ---
@@ -191,50 +184,37 @@
             }
 
 
-            // --- Core Functionality: AI/ML ---
+            // --- Core Functionality: AI Analysis ---
 
             /**
-             * Loads the MobileNet model.
+             * Uses the Gemini API to provide both accurate classification and a detailed description
+             * of the image using a single call with structured JSON output.
              */
-            async function loadModel() {
-                if (model) return;
-                isModelLoading = true;
-                statusMessage.textContent = 'Loading MobileNet AI model... (Approx 10MB)';
-                try {
-                    // This uses the global 'mobilenet' object loaded via the script tag
-                    model = await mobilenet.load();
-                    statusMessage.textContent = 'AI Model Loaded. Start camera or upload an image.';
-                } catch (error) {
-                    displayAlert('Failed to load MobileNet model. Check console for details.');
-                    console.error('MobileNet Load Error:', error);
-                    statusMessage.textContent = 'AI Model Failed to Load.';
-                } finally {
-                    isModelLoading = false;
-                    setAnalysisState(false, 'Analyze Image'); // Try to enable if image is already present
-                }
-            }
-            
-            /**
-             * Uses the Gemini API to provide a detailed description of the image.
-             * @param {string} dataUrl Base64 encoded image data URL.
-             * @param {string} detectedLabel The label from MobileNet classification.
-             */
-            async function generateDescription(dataUrl, detectedLabel) {
-                const parsedImage = parseDataUrl(dataUrl);
-                if (!parsedImage) {
-                    descriptionOutput.innerHTML = `<p class="text-red-500">Error parsing image data for Gemini API.</p>`;
+            async function analyzeImage() {
+                if (imageOutput.classList.contains('hidden') || !imageOutput.src) {
+                    displayAlert('No image to analyze. Snap a picture or upload one first.');
                     return;
                 }
 
-                descriptionOutput.innerHTML = '<div class="flex items-center text-indigo-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-indigo-600 border-t-transparent rounded-full"></div>Generating detailed description...</div>';
+                setAnalysisState(true, 'Analyzing...');
+                classificationOutput.innerHTML = '<div class="flex items-center text-blue-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full"></div>Sending image for classification...</div>';
+                descriptionOutput.innerHTML = '<p class="text-gray-500">Waiting for detailed analysis from Gemini...</p>';
 
-                const prompt = `Analyze this image. The object appears to be a ${detectedLabel}. Provide a concise, engaging summary about the object or scene, its significance, or interesting facts. Format the output using paragraphs or a list.`;
+                const parsedImage = parseDataUrl(imageOutput.src);
+                if (!parsedImage) {
+                    descriptionOutput.innerHTML = `<p class="text-red-500">Error parsing image data for Gemini API.</p>`;
+                    setAnalysisState(false, 'Analyze Image');
+                    return;
+                }
+
+                const systemPrompt = "You are a world-class object recognition and descriptive AI. Based on the input image, identify the primary subject and provide a detailed, engaging summary of it. Respond only with a JSON object.";
+                const userPrompt = "Analyze this image. Identify the object and provide a detailed description. Focus on high accuracy for the primary classification.";
                 
                 const payload = {
                     contents: [{
                         role: "user",
                         parts: [
-                            { text: prompt },
+                            { text: userPrompt },
                             {
                                 inlineData: {
                                     mimeType: parsedImage.mimeType,
@@ -243,8 +223,28 @@
                             }
                         ]
                     }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                classification: {
+                                    type: "STRING",
+                                    description: "The most accurate, concise, single-phrase classification of the image's primary subject (e.g., 'Golden Retriever', 'Eiffel Tower', 'Bookcase')."
+                                },
+                                description: {
+                                    type: "STRING",
+                                    description: "A detailed, engaging, multi-paragraph summary about the object or scene, its significance, or interesting facts."
+                                }
+                            },
+                            required: ["classification", "description"]
+                        }
+                    }
                 };
-
+                
                 // Simple retry mechanism for API call
                 for (let i = 0; i < API_RETRIES; i++) {
                     try {
@@ -259,18 +259,34 @@
                         }
 
                         const result = await response.json();
-                        const text = result?.candidates?.[0]?.content?.parts?.[0]?.text || "Description could not be generated.";
+                        const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
                         
-                        // Basic formatting to replace newlines with paragraphs
-                        const formattedText = text.split('\n').filter(p => p.trim() !== '').map(p => `<p>${p}</p>`).join('');
+                        if (!jsonText) throw new Error("API returned an empty or malformed response.");
 
-                        descriptionOutput.innerHTML = formattedText || `<p class="text-gray-800">${text}</p>`;
+                        const analysis = JSON.parse(jsonText);
+                        
+                        // Update UI with structured results
+                        classificationOutput.innerHTML = `
+                            <p>— Primary Classification —</p>
+                            <p class="font-bold text-blue-700 mt-2 text-xl">${analysis.classification || 'N/A'}</p>
+                        `;
+
+                        // Basic formatting for the description
+                        const formattedDescription = (analysis.description || 'Description not available.')
+                            .split('\n')
+                            .filter(p => p.trim() !== '')
+                            .map(p => `<p>${p}</p>`)
+                            .join('');
+
+                        descriptionOutput.innerHTML = formattedDescription;
+                        setAnalysisState(false, 'Analyze Image');
                         return; // Success
                         
                     } catch (error) {
                         console.error(`Gemini API call failed (Attempt ${i + 1}):`, error);
                         if (i === API_RETRIES - 1) {
                             descriptionOutput.innerHTML = '<p class="text-red-500">Failed to generate detailed description after multiple retries. Please check the console for network issues.</p>';
+                            setAnalysisState(false, 'Analyze Image');
                         } else {
                             // Exponential backoff delay
                             const delay = INITIAL_DELAY_MS * Math.pow(2, i);
@@ -280,65 +296,8 @@
                 }
             }
 
-            /**
-             * Classifies the image currently displayed in imageOutput using MobileNet, then calls Gemini.
-             */
-            async function classifyImage() {
-                if (!model) {
-                    displayAlert('AI Model is not loaded yet. Please wait or refresh.');
-                    return;
-                }
-                
-                if (imageOutput.classList.contains('hidden') || !imageOutput.src) {
-                    displayAlert('No image to analyze. Snap a picture or upload one first.');
-                    return;
-                }
 
-                setAnalysisState(true, 'Analyzing...');
-                classificationOutput.innerHTML = '<div class="flex items-center text-green-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-green-600 border-t-transparent rounded-full"></div>Classifying image (MobileNet)...</div>';
-                descriptionOutput.innerHTML = '<p class="text-gray-500">Waiting for classification results to generate detailed description...</p>';
-
-                try {
-                    // Step 1: Client-side classification
-                    const predictions = await model.classify(imageOutput);
-                    
-                    let outputHtml = '<p>— Image Classification (MobileNet) —</p>';
-                    const topPrediction = predictions[0];
-                    let topLabel = '';
-
-                    if (predictions.length > 0) {
-                        topLabel = topPrediction.className.split(',')[0].trim();
-                        outputHtml += `<p class="font-bold text-green-700 mt-2">Top Match: ${topLabel}</p>`;
-                        outputHtml += `<ul class="list-disc list-inside ml-4 text-sm mt-1 space-y-1">`;
-                        predictions.slice(0, 3).forEach(p => {
-                            outputHtml += `<li>${p.className} (${(p.probability * 100).toFixed(2)}%)</li>`;
-                        });
-                        outputHtml += `</ul>`;
-                    } else {
-                        outputHtml = '<p class="text-red-500">Classification failed: No predictions found.</p>';
-                    }
-                    
-                    classificationOutput.innerHTML = outputHtml;
-
-                    // Step 2: Generate detailed description using Gemini
-                    if (topLabel) {
-                       await generateDescription(imageOutput.src, topLabel);
-                    } else {
-                        descriptionOutput.innerHTML = '<p class="text-red-500">Cannot generate description without a top classification label.</p>';
-                    }
-
-
-                } catch (error) {
-                    console.error('Classification Error:', error);
-                    classificationOutput.innerHTML = '<p class="text-red-500">Error during image classification.</p>';
-                    descriptionOutput.innerHTML = '<p class="text-red-500">Analysis stopped due to classification error.</p>';
-                } finally {
-                    setAnalysisState(false, 'Analyze Image');
-                }
-            }
-
-
-            // --- UI/Camera Control Functions ---
+            // --- UI/Camera Control Functions (Unchanged) ---
 
             /**
              * Stops the running camera stream and resets the UI.
@@ -353,7 +312,7 @@
                 
                 statusMessage.classList.remove('hidden');
                 statusMessage.textContent = imageOutput.classList.contains('hidden') 
-                    ? 'AI Model Loaded. Start camera or upload an image.' 
+                    ? 'Ready. Start camera or upload an image.' 
                     : 'Image ready. Click Analyze Image or Start Camera.';
 
                 startButton.textContent = 'Start Camera';
@@ -395,7 +354,7 @@
                 stopCamera();
                 
                 // Clear previous analysis results
-                classificationOutput.innerHTML = '<p>— Image Classification (MobileNet) —</p><p class="italic text-sm mt-1">Image snapped. Click Analyze Image below.</p>';
+                classificationOutput.innerHTML = '<p>— Primary Classification —</p><p class="italic text-sm mt-1">Image snapped. Click Analyze Image below.</p>';
                 descriptionOutput.innerHTML = '<p class="text-gray-500">No detailed description yet.</p>';
                 setAnalysisState(false, 'Analyze Image');
                 hideAlert();
@@ -405,7 +364,6 @@
 
             /**
              * Attempts to get the user's media stream with exponential backoff.
-             * (Original logic for camera startup)
              */
             async function getMediaStreamWithRetry(attempt = 1) {
                 const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
@@ -504,7 +462,7 @@
                     hideAlert();
                     
                     // Clear previous analysis results and enable analysis
-                    classificationOutput.innerHTML = '<p>— Image Classification (MobileNet) —</p><p class="italic text-sm mt-1">Image uploaded. Click Analyze Image below.</p>';
+                    classificationOutput.innerHTML = '<p>— Primary Classification —</p><p class="italic text-sm mt-1">Image uploaded. Click Analyze Image below.</p>';
                     descriptionOutput.innerHTML = '<p class="text-gray-500">No detailed description yet.</p>';
                     setAnalysisState(false, 'Analyze Image');
 
@@ -521,10 +479,10 @@
             });
             
             // 6. Analyze Button listener
-            analyzeButton.addEventListener('click', classifyImage);
+            analyzeButton.addEventListener('click', analyzeImage);
 
             // --- Initialization ---
-            loadModel(); // Start loading the MobileNet model on page load
+            statusMessage.textContent = 'Ready. Start camera or upload an image.';
         });
     </script>
 </body>
