@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Vision Analyst</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Use Inter font family -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #e5e7eb; /* Light gray background for chat feel */
+        }
+        /* Custom style to ensure the container houses the video/image correctly */
+        .video-output-container {
+            min-height: 20rem; /* h-80 equivalent for minimum height */
+            background-color: #1f2937; /* bg-gray-900 */
+        }
+        /* Style for the analysis response card */
+        .ai-response-card {
+            background-color: #f9fafb; /* Lighter background for the results */
+            border-left: 4px solid #3b82f6; /* Blue border accent */
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center min-h-screen p-4 md:p-8">
+
+    <div class="w-full max-w-7xl mx-auto flex flex-col md:flex-row space-y-6 md:space-y-0 md:space-x-6">
+
+        <!-- 1. Controls / Input Panel (Left on Desktop, Top on Mobile) -->
+        <div id="control-panel" class="md:w-1/3 w-full bg-white p-6 rounded-2xl shadow-2xl h-fit sticky top-8">
+            <h1 class="text-2xl font-bold text-gray-800 mb-6 border-b pb-2">Vision Controls</h1>
+            
+            <div class="space-y-3">
+                
+                <!-- Camera Controls -->
+                <div class="flex space-x-3">
+                    <button id="start-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out shadow-md focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.778 3h2.444a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Start Camera
+                    </button>
+                    <button id="snap-button" class="w-1/3 py-3 px-4 text-lg font-semibold rounded-lg text-white bg-green-600 hover:bg-green-700 transition duration-150 ease-in-out shadow-md disabled:opacity-50" disabled>
+                        Snap
+                    </button>
+                </div>
+
+                <!-- File Upload Controls -->
+                <div class="flex space-x-3">
+                    <button id="file-button" class="flex-1 py-3 px-4 text-lg font-semibold rounded-lg text-gray-800 bg-gray-200 hover:bg-gray-300 transition duration-150 ease-in-out shadow-md focus:outline-none focus:ring-4 focus:ring-gray-500 focus:ring-opacity-50">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        Choose from Device
+                    </button>
+                    <!-- Hidden file input -->
+                    <input type="file" id="file-input" accept="image/*" class="hidden">
+                </div>
+                
+                <!-- Analysis Status/Message (Replaces the Analyze button) -->
+                <div id="analysis-status-text" class="w-full py-3 px-4 text-center text-lg font-semibold rounded-lg text-white bg-blue-600 shadow-lg transition-colors duration-200">
+                    Ready for Analysis
+                </div>
+
+                <!-- Stop Camera Button -->
+                <button id="stop-button" class="w-full py-2 px-4 text-sm font-medium rounded-lg text-gray-500 bg-transparent hover:bg-gray-100 transition duration-150 ease-in-out hidden">
+                    Stop Camera
+                </button>
+
+                <!-- Error/Status Box -->
+                <div id="alert-box" class="hidden p-3 bg-red-100 text-red-700 rounded-lg text-sm" role="alert">
+                    <!-- Error messages will appear here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Image Display and Results / Output Panel (Right on Desktop, Bottom on Mobile) -->
+        <div id="output-panel" class="md:w-2/3 w-full space-y-6">
+            
+            <!-- Image Area -->
+            <div class="bg-white p-4 rounded-2xl shadow-xl">
+                <h2 class="text-xl font-semibold text-gray-800 mb-4">Current Image Preview</h2>
+                <div class="relative rounded-xl overflow-hidden shadow-inner video-output-container flex items-center justify-center">
+                    
+                    <!-- Live Video Feed -->
+                    <video id="video-feed" autoplay playsinline class="hidden w-full h-full object-cover"></video>
+                    
+                    <!-- Hidden Canvas for capturing snapshots -->
+                    <canvas id="snapshot-canvas" class="hidden"></canvas>
+
+                    <!-- Image Output Area (Used for captured or uploaded image) -->
+                    <img id="image-output" class="hidden w-full h-full object-contain p-4" alt="Captured or Uploaded Image">
+
+                    <!-- Overlay Message -->
+                    <div id="status-message" class="absolute inset-0 flex items-center justify-center p-4 text-center text-gray-400 font-medium">
+                        Ready. Start camera or upload an image.
+                    </div>
+                </div>
+            </div>
+
+            <!-- Analysis Results (The Chat Feed) -->
+            <div id="results-feed" class="bg-white p-6 rounded-2xl shadow-xl space-y-6">
+                <h2 class="text-xl font-semibold text-gray-800 border-b pb-2">AI Analysis Feed</h2>
+                
+                <div id="initial-message" class="p-4 rounded-xl text-gray-500 bg-gray-100">
+                    Snap an image or upload one to start the automatic analysis.
+                </div>
+
+                <!-- Analysis Response Card (Where Gemini results are injected) -->
+                <div id="analysis-response" class="hidden ai-response-card p-4 rounded-xl shadow-md">
+                    <!-- Results injected here -->
+                    <div id="classification-output" class="text-gray-600 mb-4">
+                        <p class="font-bold text-lg text-blue-600 mb-2">Classification:</p>
+                        <p class="italic text-sm">Waiting for results...</p>
+                    </div>
+                    
+                    <div id="description-output" class="text-gray-800 border-t pt-4">
+                        <p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p>
+                        <p class="text-base">Waiting for results...</p>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- UI Elements ---
+            const video = document.getElementById('video-feed');
+            const canvas = document.getElementById('snapshot-canvas');
+            const imageOutput = document.getElementById('image-output');
+            const startButton = document.getElementById('start-button');
+            const snapButton = document.getElementById('snap-button');
+            const fileInput = document.getElementById('file-input');
+            const fileButton = document.getElementById('file-button');
+            const stopButton = document.getElementById('stop-button');
+            const statusMessage = document.getElementById('status-message');
+            const alertBox = document.getElementById('alert-box');
+            
+            // New status element replacing the button
+            const analysisStatusText = document.getElementById('analysis-status-text');
+
+            const initialMessage = document.getElementById('initial-message');
+            const analysisResponse = document.getElementById('analysis-response');
+            const classificationOutput = document.getElementById('classification-output');
+            const descriptionOutput = document.getElementById('description-output');
+
+            // --- State Variables ---
+            let videoStream = null;
+
+            // --- Constants for API/Retries ---
+            const API_RETRIES = 3;
+            const INITIAL_DELAY_MS = 1000;
+            // 🛑 IMPORTANT: You MUST paste your Gemini API key here inside the quotes. 
+            // The 401 Unauthorized error is caused by the key being an empty string.
+            const apiKey = ""; 
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+            // --- Utility Functions ---
+
+            /**
+             * Utility to display an alert message.
+             * @param {string} message The message content.
+             */
+            function displayAlert(message) {
+                alertBox.textContent = message;
+                alertBox.classList.remove('hidden');
+                console.error(message);
+            }
+
+            /**
+             * Utility to hide the alert box.
+             */
+            function hideAlert() {
+                alertBox.classList.add('hidden');
+            }
+            
+            /**
+             * Converts a base64 Data URL to its raw base64 string and MIME type.
+             * @param {string} dataUrl The image data URL (e.g., "data:image/png;base64,...")
+             * @returns {{base64: string, mimeType: string}|null}
+             */
+            function parseDataUrl(dataUrl) {
+                const parts = dataUrl.split(';base64,');
+                if (parts.length !== 2) return null;
+                const mimeType = parts[0].substring(5).split(';')[0]; // Remove 'data:' and potential encoding
+                const base64 = parts[1];
+                return { base64, mimeType };
+            }
+
+            // --- UI State Functions ---
+
+            /**
+             * Sets the UI state for the Analysis status bar.
+             * @param {boolean} isLoading If true, shows spinner.
+             * @param {string} text The text to display on the status bar.
+             */
+            function setAnalysisState(isLoading, text) {
+                const spinnerHtml = `<div class="animate-spin h-5 w-5 mr-3 border-2 border-white border-t-transparent rounded-full inline-block"></div>`;
+                
+                // Update the status text in the controls panel
+                analysisStatusText.innerHTML = isLoading ? `${spinnerHtml} ${text}` : text;
+                
+                // Adjust background color based on state
+                analysisStatusText.classList.remove('bg-green-600', 'bg-red-600', 'bg-blue-600');
+
+                if (isLoading) {
+                    analysisStatusText.classList.add('bg-blue-600');
+                } else if (text === 'Analysis Failed') {
+                    analysisStatusText.classList.add('bg-red-600');
+                } else if (text === 'Analysis Complete') {
+                    analysisStatusText.classList.add('bg-green-600');
+                } else {
+                    // Default ready state
+                    analysisStatusText.classList.add('bg-blue-600');
+                }
+            }
+
+
+            // --- Core Functionality: AI Analysis ---
+
+            /**
+             * Uses the Gemini API to provide both accurate classification and a detailed description
+             * of the image using a single call with structured JSON output.
+             */
+            async function analyzeImage() {
+                if (imageOutput.classList.contains('hidden') || !imageOutput.src) {
+                    // This should not happen since analyzeImage is only called after an image is ready
+                    displayAlert('No image to analyze. Snap a picture or upload one first.');
+                    return;
+                }
+                
+                if (!apiKey) {
+                    // Check if API key is still missing before attempting call
+                    setAnalysisState(false, 'API Key Missing!');
+                    displayAlert("Gemini API key is missing. Please update the 'apiKey' variable in the script.");
+                    return;
+                }
+
+                // UI setup for analysis start
+                setAnalysisState(true, 'Analyzing...');
+                initialMessage.classList.add('hidden');
+                analysisResponse.classList.remove('hidden');
+                
+                classificationOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Classification:</p><div class="flex items-center text-blue-600"><div class="animate-spin h-4 w-4 mr-2 border-2 border-blue-600 border-t-transparent rounded-full"></div>Sending image for classification...</div>`;
+                descriptionOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p><p class="text-gray-500">Waiting for detailed analysis from Gemini...</p>`;
+
+                const parsedImage = parseDataUrl(imageOutput.src);
+                if (!parsedImage) {
+                    descriptionOutput.innerHTML = `<p class="text-red-500">Error parsing image data for Gemini API.</p>`;
+                    setAnalysisState(false, 'Analysis Failed');
+                    return;
+                }
+
+                const systemPrompt = "You are a world-class object recognition and descriptive AI. Based on the input image, identify the primary subject and provide a detailed, engaging summary of it. Respond only with a JSON object.";
+                const userPrompt = "Analyze this image. Identify the object and provide a detailed description. Focus on high accuracy for the primary classification.";
+                
+                const payload = {
+                    contents: [{
+                        role: "user",
+                        parts: [
+                            { text: userPrompt },
+                            {
+                                inlineData: {
+                                    mimeType: parsedImage.mimeType,
+                                    data: parsedImage.base64
+                                }
+                            }
+                        ]
+                    }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                classification: {
+                                    type: "STRING",
+                                    description: "The most accurate, concise, single-phrase classification of the image's primary subject (e.g., 'Golden Retriever', 'Eiffel Tower', 'Bookcase')."
+                                },
+                                description: {
+                                    type: "STRING",
+                                    description: "A detailed, engaging, multi-paragraph summary about the object or scene, its significance, or interesting facts."
+                                }
+                            },
+                            required: ["classification", "description"]
+                        }
+                    }
+                };
+                
+                // Simple retry mechanism for API call
+                for (let i = 0; i < API_RETRIES; i++) {
+                    try {
+                        const response = await fetch(API_URL, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!response.ok) {
+                            // Throw error including the status for console logging
+                            throw new Error(`HTTP error! status: ${response.status}`);
+                        }
+
+                        const result = await response.json();
+                        const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        
+                        if (!jsonText) throw new Error("API returned an empty or malformed response.");
+
+                        const analysis = JSON.parse(jsonText);
+                        
+                        // Update UI with structured results
+                        classificationOutput.innerHTML = `
+                            <p class="font-bold text-lg text-blue-600 mb-2">Classification:</p>
+                            <p class="font-semibold text-gray-800 text-xl">${analysis.classification || 'N/A'}</p>
+                        `;
+
+                        // Basic formatting for the description
+                        const formattedDescription = (analysis.description || 'Description not available.')
+                            .split('\n')
+                            .filter(p => p.trim() !== '')
+                            .map(p => `<p class="mb-2">${p}</p>`)
+                            .join('');
+
+                        descriptionOutput.innerHTML = `
+                            <p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p>
+                            <div class="text-base text-gray-700">${formattedDescription}</div>
+                        `;
+                        
+                        setAnalysisState(false, 'Analysis Complete');
+                        return; // Success
+                        
+                    } catch (error) {
+                        console.error(`Gemini API call failed (Attempt ${i + 1}):`, error);
+                        if (i === API_RETRIES - 1) {
+                            descriptionOutput.innerHTML = `<p class="font-bold text-lg text-blue-600 mb-2">Detailed Description:</p><p class="text-red-500">Failed to generate detailed description after multiple retries. Please check the console for network issues.</p>`;
+                            setAnalysisState(false, 'Analysis Failed');
+                        } else {
+                            // Exponential backoff delay
+                            const delay = INITIAL_DELAY_MS * Math.pow(2, i);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
+                    }
+                }
+            }
+
+
+            // --- UI/Camera Control Functions (Unchanged) ---
+
+            /**
+             * Stops the running camera stream and resets the UI.
+             */
+            function stopCamera() {
+                if (videoStream) {
+                    videoStream.getTracks().forEach(track => track.stop());
+                }
+                videoStream = null;
+                video.classList.add('hidden');
+                video.srcObject = null;
+                
+                statusMessage.classList.remove('hidden');
+                statusMessage.textContent = imageOutput.classList.contains('hidden') 
+                    ? 'Ready. Start camera or upload an image.' 
+                    : 'Image ready. Analysis starting...';
+
+                startButton.textContent = 'Start Camera';
+                startButton.disabled = false;
+                snapButton.disabled = true;
+                stopButton.classList.add('hidden');
+                setAnalysisState(false, 'Ready for Analysis');
+            }
+
+            /**
+             * Handles image capture from the live video feed.
+             */
+            function snapImage() {
+                if (!videoStream || video.paused || video.ended) {
+                    displayAlert('Camera is not active. Please start the camera first.');
+                    return;
+                }
+
+                // Set canvas dimensions to match the video feed
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                
+                // Draw the current video frame onto the canvas
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Convert canvas content to a data URL (PNG format)
+                const imageDataUrl = canvas.toDataURL('image/png');
+
+                // Display the snapped image in the output area
+                imageOutput.src = imageDataUrl;
+                imageOutput.classList.remove('hidden');
+                
+                // Hide video and show the static image
+                video.classList.add('hidden');
+                statusMessage.classList.add('hidden');
+                
+                // Stop the camera stream after snapping
+                stopCamera();
+                
+                hideAlert();
+                
+                // *** AUTOMATIC ANALYSIS TRIGGER ***
+                console.log('Image snapped successfully. Starting automatic analysis...');
+                analyzeImage();
+            }
+
+            /**
+             * Attempts to get the user's media stream with exponential backoff.
+             */
+            async function getMediaStreamWithRetry(attempt = 1) {
+                const delay = INITIAL_DELAY_MS * Math.pow(2, attempt - 1);
+
+                try {
+                    hideAlert();
+                    imageOutput.classList.add('hidden'); // Hide any previous output image
+                    initialMessage.classList.remove('hidden');
+                    analysisResponse.classList.add('hidden');
+                    setAnalysisState(false, 'Camera Active'); // Update status bar
+                    
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                    videoStream = stream; 
+
+                    video.srcObject = stream;
+                    video.classList.remove('hidden');
+                    statusMessage.classList.add('hidden');
+
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        startButton.textContent = 'Camera Active (Streaming)';
+                        startButton.disabled = true;
+                        snapButton.disabled = false;
+                        stopButton.classList.remove('hidden');
+                        video.style.objectFit = 'cover';
+                    };
+                    
+                } catch (err) {
+                    console.error("Error accessing media devices:", err);
+                    
+                    if (attempt < API_RETRIES) {
+                        statusMessage.textContent = `Attempt ${attempt} failed: ${err.name}. Retrying in ${delay / 1000}s...`;
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                        await getMediaStreamWithRetry(attempt + 1);
+                    } else {
+                        statusMessage.classList.remove('hidden');
+                        statusMessage.textContent = 'Ready. Start camera or upload an image.';
+                        displayAlert(
+                            `Cannot start camera after ${API_RETRIES} attempts. Error: ${err.name}. Check camera access permissions.`
+                        );
+                        startButton.textContent = 'Failed to Start Camera';
+                        startButton.disabled = true;
+                        snapButton.disabled = true;
+                        stopButton.classList.add('hidden');
+                        setAnalysisState(false, 'Ready for Analysis');
+                    }
+                }
+            }
+
+            // --- Event Listeners ---
+
+            // 1. Start Camera button
+            startButton.addEventListener('click', () => {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    displayAlert("Error: Media devices API not supported by this browser.");
+                    startButton.disabled = true;
+                    return;
+                }
+                
+                startButton.textContent = 'Requesting Camera...';
+                startButton.disabled = true;
+                statusMessage.textContent = "Requesting camera access, please wait...";
+                statusMessage.classList.remove('hidden');
+                
+                getMediaStreamWithRetry();
+            });
+
+            // 2. Snap Button
+            snapButton.addEventListener('click', snapImage);
+            
+            // 3. Stop Button
+            stopButton.addEventListener('click', stopCamera);
+
+            // 4. File Input trigger button
+            fileButton.addEventListener('click', () => {
+                stopCamera(); // Stop camera if running
+                fileInput.click();
+            });
+            
+            // 5. File Input change listener (when a file is selected)
+            fileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (!file) {
+                    return;
+                }
+                
+                if (!file.type.startsWith('image/')) {
+                    displayAlert('Please select a valid image file.');
+                    return;
+                }
+
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imageOutput.src = e.target.result;
+                    imageOutput.classList.remove('hidden');
+                    video.classList.add('hidden');
+                    statusMessage.classList.add('hidden');
+                    hideAlert();
+                    
+                    // Reset analysis feedback
+                    initialMessage.classList.add('hidden');
+                    analysisResponse.classList.remove('hidden');
+
+                    setAnalysisState(false, 'Ready for Analysis');
+
+                    fileInput.value = '';
+                    console.log('Image loaded successfully from device. Starting automatic analysis...');
+                    
+                    // *** AUTOMATIC ANALYSIS TRIGGER ***
+                    analyzeImage();
+                };
+                
+                reader.onerror = () => {
+                    displayAlert('Error reading the selected file.');
+                    fileInput.value = '';
+                };
+
+                reader.readAsDataURL(file);
+            });
+            
+            // --- Initialization ---
+            statusMessage.textContent = 'Ready. Start camera or upload an image.';
+            setAnalysisState(false, 'Ready for Analysis');
+        });
+    </script>
+</body>
+</html>
