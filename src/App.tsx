@@ -309,7 +309,7 @@ const App: FC = () => {
                 {/* 1. Controls / Input Panel */}
                 <div id="control-panel" className="md:w-1/3 w-full bg-white p-6 rounded-2xl shadow-2xl h-fit sticky top-8">
                     <h1 className="text-2xl font-extrabold text-gray-800 mb-6 border-b pb-2">
-                        <span className="text-indigo-600">Gemini</span> Vision Analyst
+                        <span className="text-indigo-600">AI</span> Vision Analyst
                     </h1>
                     
                     <div className="space-y-4">
