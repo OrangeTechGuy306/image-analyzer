@@ -1,11 +1,16 @@
-import { useState, useEffect, useRef, useCallback, type ChangeEvent, type FC, type JSX } from 'react';
+import React, { useState, useEffect, useRef, useCallback, type ChangeEvent, type FC, type JSX } from 'react';
 
 // --- Types and Interfaces ---
 type AnalysisState = 'idle' | 'loading' | 'complete' | 'failed' | 'api-key-missing';
+type CameraMode = 'user' | 'environment'; // 'user' = front camera, 'environment' = back camera
 
+// Updated interface to specifically capture electronics specifications
 interface AnalysisResult {
-    classification: string;
-    description: string;
+    name: string;
+    type: string;
+    wattage: string;
+    voltage: string;
+    details: string; // Used for general notes or description
 }
 
 // --- Constants ---
@@ -24,12 +29,11 @@ const parseDataUrl = (dataUrl: string): { base64: string; mimeType: string } | n
     const base64 = parts[1];
     return { base64, mimeType };
 };
-
 /**
- * Parses and formats the description from the Gemini response, handling newlines.
+ * Parses and formats the description (details) from the Gemini response, handling newlines.
  */
 const formatDescription = (description: string): JSX.Element => {
-    if (!description) return <p className="text-gray-500">No description available.</p>;
+    if (!description) return <p className="text-gray-500">No details available.</p>;
 
     return (
         <div className="text-base text-gray-700">
@@ -44,8 +48,8 @@ const formatDescription = (description: string): JSX.Element => {
 
 // --- Main React Component ---
 const App: FC = () => {
-
-
+    // 🛑 IMPORTANT: PASTE YOUR GEMINI API KEY HERE TO FIX THE 401 ERROR
+    // You MUST replace the empty string with your actual key.
     const apiKey: string = import.meta.env.VITE_GEMINI_KEY; 
     const API_URL: string = `${import.meta.env.VITE_BASE_URL}/${API_MODEL}:generateContent?key=${apiKey}`;
 
@@ -55,6 +59,7 @@ const App: FC = () => {
     const [analysisState, setAnalysisState] = useState<AnalysisState>('idle'); 
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [cameraFacingMode, setCameraFacingMode] = useState<CameraMode>('user'); // Default to front camera
 
     // --- Refs for DOM elements ---
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -62,7 +67,71 @@ const App: FC = () => {
     const streamRef = useRef<MediaStream | null>(null);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+    // --- Core Functionality: Camera Control Functions ---
+    
+    // Stop Camera is now a dependency for startCameraStream, so it must be memoized
+    const stopCamera = useCallback((): void => {
+        if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+        }
+        streamRef.current = null;
+        if (videoRef.current) {
+            videoRef.current.srcObject = null;
+        }
+        setIsStreaming(false);
+    }, []);
 
+
+    // Refactored internal function to start the stream with a specific mode
+    const startCameraStream = useCallback(async (mode: CameraMode): Promise<void> => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            setError("Media devices API not supported by this browser.");
+            return;
+        }
+
+        stopCamera();
+        setError(null);
+        setAnalysisState('idle');
+
+        for (let i = 0; i < API_RETRIES; i++) {
+            try {
+                const stream: MediaStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: mode } // Use the dynamic mode here
+                });
+                streamRef.current = stream;
+                
+                if (videoRef.current) {
+                    videoRef.current.srcObject = stream;
+                    videoRef.current.play();
+                }
+                setIsStreaming(true);
+                setCameraFacingMode(mode); // Update state to reflect the mode successfully started
+                return; // Success
+
+            } catch (err) {
+                console.error("Error accessing media devices:", err);
+                if (i === API_RETRIES - 1) {
+                    setError(`Cannot start camera after ${API_RETRIES} attempts. Error: ${(err as Error).name}. Check permissions.`);
+                    setIsStreaming(false);
+                    return;
+                }
+                const delay: number = INITIAL_DELAY_MS * Math.pow(2, i);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }, [stopCamera, setError, setAnalysisState, setIsStreaming]);
+    
+    // Public function for the main start button (starts with current state mode)
+    const handleStartCamera = () => {
+        startCameraStream(cameraFacingMode);
+    };
+
+    // New function to switch cameras
+    const switchCamera = () => {
+        const newMode: CameraMode = cameraFacingMode === 'user' ? 'environment' : 'user';
+        startCameraStream(newMode);
+    };
+    
     // --- Core Functionality: API Analysis ---
 
     const analyzeImage = useCallback(async (imageDataUrl: string): Promise<void> => {
@@ -85,8 +154,9 @@ const App: FC = () => {
             return;
         }
 
-        const systemPrompt: string = "You are a world-class object recognition and descriptive AI. Based on the input image, identify the primary subject and provide a detailed, engaging summary of it. Respond only with a JSON object.";
-        const userPrompt: string = "Analyze this image. Identify the object and provide a detailed description. Focus on high accuracy for the primary classification.";
+        // UPDATED: System prompt and user query focused on electronics specifications
+        const systemPrompt: string = "You are a world-class electronics specification analyst. Your task is to accurately read and extract the name, type, wattage, and voltage from the visible labels or components in the input image. Respond only with a precise JSON object following the provided schema.";
+        const userPrompt: string = "Analyze this image of an electronic device or appliance. Provide its name, type, power details (wattage and voltage), and a brief summary of its function or visible state (details). If a value is not found, use 'Unknown'.";
         
         const payload: object = {
             contents: [{
@@ -106,13 +176,17 @@ const App: FC = () => {
             },
             generationConfig: {
                 responseMimeType: "application/json",
+                // UPDATED: Response schema for structured electronics data
                 responseSchema: {
                     type: "OBJECT",
                     properties: {
-                        classification: { type: "STRING" },
-                        description: { type: "STRING" }
+                        name: { "type": "STRING" },
+                        type: { "type": "STRING" },
+                        wattage: { "type": "STRING" },
+                        voltage: { "type": "STRING" },
+                        details: { "type": "STRING" }
                     },
-                    required: ["classification", "description"]
+                    required: ["name", "type", "wattage", "voltage", "details"]
                 }
             }
         };
@@ -152,54 +226,6 @@ const App: FC = () => {
         }
     }, [apiKey, API_URL]);
 
-
-    // --- Camera Control Functions ---
-
-    const stopCamera = useCallback((): void => {
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-        }
-        streamRef.current = null;
-        if (videoRef.current) {
-            videoRef.current.srcObject = null;
-        }
-        setIsStreaming(false);
-    }, []);
-
-    const startCamera = async (): Promise<void> => {
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            setError("Media devices API not supported by this browser.");
-            return;
-        }
-
-        stopCamera();
-        setError(null);
-        setAnalysisState('idle');
-
-        for (let i = 0; i < API_RETRIES; i++) {
-            try {
-                const stream: MediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
-                streamRef.current = stream;
-                
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    videoRef.current.play();
-                }
-                setIsStreaming(true);
-                return; // Success
-
-            } catch (err) {
-                console.error("Error accessing media devices:", err);
-                if (i === API_RETRIES - 1) {
-                    setError(`Cannot start camera after ${API_RETRIES} attempts. Error: ${(err as Error).name}. Check permissions.`);
-                    setIsStreaming(false);
-                    return;
-                }
-                const delay: number = INITIAL_DELAY_MS * Math.pow(2, i);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-        }
-    };
 
     const snapImage = (): void => {
         const video = videoRef.current;
@@ -309,7 +335,7 @@ const App: FC = () => {
                 {/* 1. Controls / Input Panel */}
                 <div id="control-panel" className="md:w-1/3 w-full bg-white p-6 rounded-2xl shadow-2xl h-fit sticky top-8">
                     <h1 className="text-2xl font-extrabold text-gray-800 mb-6 border-b pb-2">
-                        <span className="text-indigo-600">AI</span> Vision Analyst
+                        <span className="text-indigo-600">Gemini</span> Electronics Analyst
                     </h1>
                     
                     <div className="space-y-4">
@@ -317,7 +343,7 @@ const App: FC = () => {
                         {/* Camera Controls */}
                         <div className="flex space-x-3">
                             <button 
-                                onClick={startCamera} 
+                                onClick={handleStartCamera} // Updated to use wrapper function
                                 disabled={isStreaming}
                                 className="flex-1 py-3 px-4 text-lg font-semibold rounded-xl text-white bg-indigo-600 hover:bg-indigo-700 transition duration-150 ease-in-out shadow-md disabled:bg-gray-400 focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50"
                             >
@@ -335,6 +361,19 @@ const App: FC = () => {
                                 Snap
                             </button>
                         </div>
+                        
+                        {/* Switch Camera Button (Only visible when streaming) */}
+                        {isStreaming && (
+                            <button 
+                                onClick={switchCamera} 
+                                className="w-full py-3 px-4 text-lg font-semibold rounded-xl text-indigo-600 bg-indigo-100 hover:bg-indigo-200 transition duration-150 ease-in-out shadow-md focus:outline-none focus:ring-4 focus:ring-indigo-500 focus:ring-opacity-50"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16V4m0 0L3 8m4-4l4 4m6 16V8m0 0l4 4m-4-4l-4 4" />
+                                </svg>
+                                Switch to {cameraFacingMode === 'user' ? 'Back' : 'Front'} Camera
+                            </button>
+                        )}
                         
                         {/* File Upload Controls */}
                         <div className="flex space-x-3">
@@ -359,16 +398,6 @@ const App: FC = () => {
                         
                         {/* Analysis Status */}
                         {getAnalysisStatusUI()}
-
-                        {/* Stop Camera Button */}
-                        {isStreaming && (
-                            <button 
-                                onClick={stopCamera} 
-                                className="w-full py-2 px-4 text-sm font-medium rounded-xl text-gray-500 bg-transparent hover:bg-gray-100 transition duration-150 ease-in-out border border-gray-300 mt-2"
-                            >
-                                Stop Camera Stream
-                            </button>
-                        )}
                         
                         {/* Error/Status Box */}
                         {(error || analysisState === 'api-key-missing') && (
@@ -426,7 +455,7 @@ const App: FC = () => {
 
                     {/* Analysis Results */}
                     <div id="results-feed" className="bg-white p-6 rounded-2xl shadow-xl space-y-6">
-                        <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">AI Analysis Feed</h2>
+                        <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">Electronics Specification Analysis</h2>
                         
                         {(analysisState === 'idle' && !capturedImage) && (
                             <div className="p-4 rounded-xl text-gray-500 bg-gray-100">
@@ -438,33 +467,62 @@ const App: FC = () => {
                         {(analysisResult || analysisState === 'loading' || analysisState === 'failed') && (
                             <div className="ai-response-card p-4 rounded-xl shadow-md border-l-4 border-indigo-500 bg-white">
                                 
-                                {/* Classification Output */}
-                                <div className="mb-4">
-                                    <p className="font-bold text-lg text-indigo-600 mb-2">Classification:</p>
-                                    {analysisState === 'loading' && (
-                                        <div className="flex items-center text-indigo-600 font-semibold text-xl">
-                                            <div className="animate-spin h-6 w-6 mr-3 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
-                                            Identifying primary subject...
-                                        </div>
-                                    )}
-                                    {analysisState !== 'loading' && (
-                                        <p className="font-semibold text-gray-800 text-2xl">
-                                            {analysisResult?.classification || 'N/A'}
-                                        </p>
-                                    )}
-                                </div>
+                                {analysisState === 'loading' && (
+                                    <div className="flex items-center text-indigo-600 font-semibold text-xl mb-4">
+                                        <div className="animate-spin h-6 w-6 mr-3 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+                                        Extracting electronics specifications...
+                                    </div>
+                                )}
                                 
-                                {/* Description Output */}
+                                {/* Extracted Structured Details Output */}
+                                {analysisState !== 'loading' && (
+                                    <div className="space-y-3 mb-4">
+                                        <div className="grid grid-cols-2 gap-4">
+                                            {/* Name */}
+                                            <div>
+                                                <p className="font-bold text-base text-indigo-600">Device Name:</p>
+                                                <p className="font-semibold text-gray-800 text-lg">
+                                                    {analysisResult?.name || 'Unknown'}
+                                                </p>
+                                            </div>
+                                            {/* Type */}
+                                            <div>
+                                                <p className="font-bold text-base text-indigo-600">Device Type:</p>
+                                                <p className="font-semibold text-gray-800 text-lg">
+                                                    {analysisResult?.type || 'Unknown'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 border-t pt-3">
+                                            {/* Wattage */}
+                                            <div>
+                                                <p className="font-bold text-base text-indigo-600">Wattage (Power):</p>
+                                                <p className="font-semibold text-gray-800 text-lg">
+                                                    {analysisResult?.wattage || 'Unknown'}
+                                                </p>
+                                            </div>
+                                            {/* Voltage */}
+                                            <div>
+                                                <p className="font-bold text-base text-indigo-600">Voltage:</p>
+                                                <p className="font-semibold text-gray-800 text-lg">
+                                                    {analysisResult?.voltage || 'Unknown'}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {/* Other Details Output (replaces Description) */}
                                 <div className="border-t pt-4">
-                                    <p className="font-bold text-lg text-indigo-600 mb-2">Detailed Description:</p>
+                                    <p className="font-bold text-lg text-indigo-600 mb-2">Other Details/Function:</p>
                                     {analysisState === 'loading' && (
-                                        <p className="text-gray-500 italic">Generating detailed summary...</p>
+                                        <p className="text-gray-500 italic">Extracting summary of function/state...</p>
                                     )}
                                     {analysisState === 'failed' && (
-                                        <p className="text-red-500">Failed to retrieve description.</p>
+                                        <p className="text-red-500">Failed to retrieve details.</p>
                                     )}
-                                    {analysisResult?.description && (
-                                        formatDescription(analysisResult.description)
+                                    {analysisResult?.details && (
+                                        formatDescription(analysisResult.details)
                                     )}
                                 </div>
                                 
